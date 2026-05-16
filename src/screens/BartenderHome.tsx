@@ -56,6 +56,7 @@ export default function BartenderHome({ navigation }: Props) {
       // get_queryset() del backend retorna pending+preparing para Bartender (FIFO)
       const peds = await api.getPedidos();
       setPedidos(peds);
+      console.log("PEDIDOS:\n", JSON.stringify(peds, null, 2));
     } finally {
       setLoading(false);
     }

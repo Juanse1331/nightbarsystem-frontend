@@ -9,6 +9,8 @@ import {
   Alert,
   ActivityIndicator,
   RefreshControl,
+  Modal,
+  Image,
 } from "react-native";
 import { useAuth } from "../context/AuthContext";
 import * as api from "../services/api";
@@ -40,7 +42,14 @@ const STATUS_CONFIG: Record<
     bg: colors.delivered + "20",
   },
 };
-
+const CATEGORY_ICONS: Record<string, string> = {
+  Whisky: "🥃",
+  Ron: "🍹",
+  Vodka: "❄️",
+  Tequila: "🌵",
+  Aguardiente: "🔥",
+  Cerveza: "🍺",
+};
 interface CartMap {
   [productoId: number]: number;
 }
@@ -58,7 +67,10 @@ export default function MeseroHome({ navigation }: Props) {
   const [pedidos, setPedidos] = useState<Pedido[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [loadingData, setLoadingData] = useState(true);
+  const [productoSeleccionado, setProductoSeleccionado] =
+    useState<Producto | null>(null);
 
+  const [modalVisible, setModalVisible] = useState(false);
   useEffect(() => {
     loadInitialData();
   }, []);
@@ -70,10 +82,12 @@ export default function MeseroHome({ navigation }: Props) {
         api.getMesas(),
         api.getPedidos(),
       ]);
-      // Solo mesas disponibles para seleccionar
       setProductos(prods);
       setMesas(ms);
       setPedidos(peds);
+    //  console.log("PRODUCTOS:\n", JSON.stringify(prods, null, 2));
+    // console.log("MESAS:\n", JSON.stringify(ms, null, 2));
+    //  console.log("PEDIDOS:\n", JSON.stringify(peds, null, 2));
     } catch (e: any) {
       Alert.alert("Error", "No se pudieron cargar los datos del servidor");
     } finally {
@@ -169,7 +183,20 @@ export default function MeseroHome({ navigation }: Props) {
   // Separar pedidos activos (pending/preparing) de entregados
   const pedidosActivos = pedidos.filter((p) => p.estado !== "delivered");
   const pedidosEntregados = pedidos.filter((p) => p.estado === "delivered");
+  const productosPorCategoria = productos.reduce(
+    (acc, producto) => {
+      const categoria = producto.categoria_nombre || "Sin categoría";
 
+      if (!acc[categoria]) {
+        acc[categoria] = [];
+      }
+
+      acc[categoria].push(producto);
+
+      return acc;
+    },
+    {} as Record<string, Producto[]>,
+  );
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor={colors.bg} />
@@ -258,44 +285,140 @@ export default function MeseroHome({ navigation }: Props) {
           </ScrollView>
 
           <Text style={styles.sectionLabel}>BEBIDAS</Text>
-          <View style={styles.productsGrid}>
-            {productos.map((p) => {
-              const qty = cart[p.id] ?? 0;
-              return (
-                <View
-                  key={p.id}
-                  style={[
-                    styles.productCard,
-                    qty > 0 && styles.productCardSelected,
-                  ]}
-                >
-                  {p.imagen ? null : null}
-                  <Text style={styles.productName}>{p.nombre}</Text>
-                  <Text style={styles.productPrice}>
-                    ${parseFloat(p.precio).toFixed(2)}
-                  </Text>
-                  <View style={styles.qtyRow}>
-                    {qty > 0 && (
-                      <TouchableOpacity
-                        style={styles.qtyBtn}
-                        onPress={() => removeFromCart(p.id)}
-                      >
-                        <Text style={styles.qtyBtnText}>−</Text>
-                      </TouchableOpacity>
-                    )}
-                    {qty > 0 && <Text style={styles.qtyNum}>{qty}</Text>}
+          {Object.entries(productosPorCategoria).map(([categoria, items]) => (
+            <View key={categoria} style={{ marginBottom: spacing.lg }}>
+              {/* Título categoría */}
+              <Text style={styles.categoryTitle}>
+                {CATEGORY_ICONS[categoria]} {categoria.toUpperCase()}
+              </Text>
+
+              <View style={styles.productsGrid}>
+                {items.map((p) => {
+                  const qty = cart[p.id] ?? 0;
+
+                  return (
                     <TouchableOpacity
-                      style={[styles.qtyBtn, styles.qtyBtnAdd]}
-                      onPress={() => addToCart(p.id)}
+                      key={p.id}
+                      style={[
+                        styles.productCard,
+                        qty > 0 && styles.productCardSelected,
+                      ]}
+                      onPress={() => {
+                        setProductoSeleccionado(p);
+                        setModalVisible(true);
+                      }}
                     >
-                      <Text style={styles.qtyBtnText}>+</Text>
+                      {/* Imagen */}
+                      {p.imagen ? (
+                        <Image
+                          source={{ uri: p.imagen }}
+                          style={styles.productImage}
+                          resizeMode="cover"
+                        />
+                      ) : (
+                        <View style={styles.placeholderMini}>
+                          <Text style={{ color: "white", fontSize: 10 }}>
+                            SIN IMAGEN
+                          </Text>
+                        </View>
+                      )}
+
+                      {/* Nombre */}
+                      <Text style={styles.productName}>{p.nombre}</Text>
+
+                      {/* Precio */}
+                      <Text style={styles.productPrice}>
+                        ${parseFloat(p.precio).toFixed(2)}
+                      </Text>
+
+                      {/* Botones */}
+                      <View style={styles.qtyRow}>
+                        {qty > 0 && (
+                          <TouchableOpacity
+                            style={styles.qtyBtn}
+                            onPress={() => removeFromCart(p.id)}
+                          >
+                            <Text style={styles.qtyBtnText}>−</Text>
+                          </TouchableOpacity>
+                        )}
+
+                        {qty > 0 && <Text style={styles.qtyNum}>{qty}</Text>}
+
+                        <TouchableOpacity
+                          style={[styles.qtyBtn, styles.qtyBtnAdd]}
+                          onPress={() => addToCart(p.id)}
+                        >
+                          <Text style={styles.qtyBtnText}>+</Text>
+                        </TouchableOpacity>
+                      </View>
                     </TouchableOpacity>
-                  </View>
-                </View>
-              );
-            })}
-          </View>
+                  );
+                })}
+              </View>
+            </View>
+          ))}
           <View style={{ height: 160 }} />
+          <Modal
+            visible={modalVisible}
+            transparent
+            animationType="slide"
+            onRequestClose={() => setModalVisible(false)}
+          >
+            <View style={styles.modalOverlay}>
+              <View style={styles.modalContent}>
+                {/* Imagen */}
+                {productoSeleccionado?.imagen ? (
+                  <Image
+                    source={{ uri: productoSeleccionado.imagen }}
+                    style={styles.modalImage}
+                    resizeMode="cover"
+                  />
+                ) : (
+                  <View style={styles.placeholderImage}>
+                    <Text style={{ color: "white" }}>SIN IMAGEN</Text>
+                  </View>
+                )}
+
+                {/* Nombre */}
+                <Text style={styles.modalTitle}>
+                  {productoSeleccionado?.nombre}
+                </Text>
+
+                {/* Categoría */}
+                <Text style={styles.modalCategory}>
+                  {productoSeleccionado?.categoria_nombre}
+                </Text>
+
+                {/* Descripción */}
+                <Text style={styles.modalDescription}>
+                  {productoSeleccionado?.descripcion}
+                </Text>
+
+                {/* Precio */}
+                <Text style={styles.modalPrice}>
+                  ${productoSeleccionado?.precio}
+                </Text>
+
+                {/* Botón agregar */}
+                <TouchableOpacity
+                  style={styles.modalButton}
+                  onPress={() => {
+                    if (productoSeleccionado) {
+                      addToCart(productoSeleccionado.id);
+                    }
+                    setModalVisible(false);
+                  }}
+                >
+                  <Text style={styles.modalButtonText}>AGREGAR AL PEDIDO</Text>
+                </TouchableOpacity>
+
+                {/* Cerrar */}
+                <TouchableOpacity onPress={() => setModalVisible(false)}>
+                  <Text style={styles.closeText}>Cerrar</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </Modal>
         </ScrollView>
       ) : (
         /* ── HISTORY TAB ── */
@@ -628,5 +751,102 @@ const styles = StyleSheet.create({
     fontSize: 14,
     ...typography.heading,
     letterSpacing: 1,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.7)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+
+  modalContent: {
+    width: "85%",
+    backgroundColor: colors.card,
+    borderRadius: 20,
+    padding: spacing.lg,
+  },
+
+  modalImage: {
+    width: "100%",
+    height: 200,
+    borderRadius: 16,
+    marginBottom: spacing.md,
+  },
+
+  placeholderImage: {
+    width: "100%",
+    height: 200,
+    borderRadius: 16,
+    backgroundColor: colors.border,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: spacing.md,
+  },
+
+  modalTitle: {
+    color: colors.textPrimary,
+    fontSize: 24,
+    ...typography.heading,
+  },
+
+  modalCategory: {
+    color: colors.mesero,
+    marginTop: 4,
+    marginBottom: spacing.sm,
+  },
+
+  modalDescription: {
+    color: colors.textSecondary,
+    lineHeight: 22,
+  },
+
+  modalPrice: {
+    color: colors.delivered,
+    fontSize: 22,
+    marginTop: spacing.md,
+    ...typography.heading,
+  },
+
+  modalButton: {
+    backgroundColor: colors.mesero,
+    padding: spacing.md,
+    borderRadius: radius.lg,
+    alignItems: "center",
+    marginTop: spacing.lg,
+  },
+
+  modalButtonText: {
+    color: colors.black,
+    fontWeight: "bold",
+  },
+
+  closeText: {
+    color: colors.textMuted,
+    textAlign: "center",
+    marginTop: spacing.md,
+  },
+  categoryTitle: {
+    color: colors.mesero,
+    fontSize: 20,
+    marginBottom: spacing.sm,
+    marginTop: spacing.md,
+    ...typography.heading,
+  },
+
+  productImage: {
+    width: "100%",
+    height: 100,
+    borderRadius: 12,
+    marginBottom: spacing.sm,
+  },
+
+  placeholderMini: {
+    width: "100%",
+    height: 100,
+    borderRadius: 12,
+    backgroundColor: colors.border,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: spacing.sm,
   },
 });

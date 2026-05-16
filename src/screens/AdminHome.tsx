@@ -39,6 +39,7 @@ export default function AdminHome({ navigation }: Props) {
     try {
       const data = await api.getReportes();
       setReportes(data);
+      console.log("REPORTES:\n", JSON.stringify(data, null, 2));
     } catch (e: any) {
       // Si no hay reportes aún, no es un error crítico
     } finally {
@@ -207,9 +208,11 @@ export default function AdminHome({ navigation }: Props) {
                 {ultimos7.map((r, i) => {
                   const val = parseFloat(String(r.ingresos_totales));
                   const barH = Math.max(4, (val / maxIngreso) * 100);
-                  const fecha = new Date(r.fecha);
+                  const [year, month, day] = r.fecha.split("-").map(Number);
+
+                  const fecha = new Date(year, month - 1, day);
                   const label = fecha
-                    .toLocaleDateString("es", { weekday: "short" })
+                    .toLocaleDateString("es-CO", { weekday: "short" })
                     .slice(0, 3)
                     .toUpperCase();
                   return (

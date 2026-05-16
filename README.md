@@ -1,6 +1,6 @@
 # 🍹 NightbarApp — React Native + TypeScript (Expo SDK 54)
 
-Frontend móvil para **IroMarket** — conecta meseros, bartenders y administradores con el backend Django ya implementado.
+Frontend móvil para **NightBarSystemt** — conecta meseros, bartenders y administradores con el backend Django ya implementado.
 
 ---
 
