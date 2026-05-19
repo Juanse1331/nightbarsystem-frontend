@@ -11,7 +11,10 @@ import {
   RefreshControl,
   Modal,
   Image,
+  useWindowDimensions,
+  Platform,
 } from "react-native";
+
 import { useAuth } from "../context/AuthContext";
 import * as api from "../services/api";
 import { colors, spacing, radius, typography, globalStyles } from "../theme";
@@ -21,7 +24,6 @@ import { ScreenProps } from "../navigation/AppNavigator";
 type Props = ScreenProps<"MeseroHome">;
 type Tab = "order" | "history";
 
-// Mapa de estados del pedido (los valores vienen del backend en minúscula)
 const STATUS_CONFIG: Record<
   EstadoPedido,
   { label: string; color: string; bg: string }
@@ -42,6 +44,7 @@ const STATUS_CONFIG: Record<
     bg: colors.delivered + "20",
   },
 };
+
 const CATEGORY_ICONS: Record<string, string> = {
   Whisky: "🥃",
   Ron: "🍹",
@@ -50,27 +53,42 @@ const CATEGORY_ICONS: Record<string, string> = {
   Aguardiente: "🔥",
   Cerveza: "🍺",
 };
+
 interface CartMap {
   [productoId: number]: number;
 }
 
 export default function MeseroHome({ navigation }: Props) {
+  const { width } = useWindowDimensions();
+
+  const isDesktop = width >= 1200;
+  const isTablet = width >= 768 && width < 1200;
+  const isMobile = width < 768;
+
+  const CARD_WIDTH = isDesktop ? "23%" : isTablet ? "31%" : "47%";
+
+  const CONTENT_WIDTH = isDesktop ? 1500 : 1000;
+
   const { user, signOut } = useAuth();
+
   const [tab, setTab] = useState<Tab>("order");
 
   const [productos, setProductos] = useState<Producto[]>([]);
   const [mesas, setMesas] = useState<Mesa[]>([]);
   const [mesaSeleccionada, setMesaSeleccionada] = useState<number | null>(null);
+
   const [cart, setCart] = useState<CartMap>({});
   const [sending, setSending] = useState(false);
 
   const [pedidos, setPedidos] = useState<Pedido[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [loadingData, setLoadingData] = useState(true);
+
   const [productoSeleccionado, setProductoSeleccionado] =
     useState<Producto | null>(null);
 
   const [modalVisible, setModalVisible] = useState(false);
+
   useEffect(() => {
     loadInitialData();
   }, []);
@@ -82,14 +100,12 @@ export default function MeseroHome({ navigation }: Props) {
         api.getMesas(),
         api.getPedidos(),
       ]);
+
       setProductos(prods);
       setMesas(ms);
       setPedidos(peds);
-    //  console.log("PRODUCTOS:\n", JSON.stringify(prods, null, 2));
-    // console.log("MESAS:\n", JSON.stringify(ms, null, 2));
-    //  console.log("PEDIDOS:\n", JSON.stringify(peds, null, 2));
-    } catch (e: any) {
-      Alert.alert("Error", "No se pudieron cargar los datos del servidor");
+    } catch (e) {
+      Alert.alert("Error", "No se pudieron cargar los datos");
     } finally {
       setLoadingData(false);
     }
@@ -97,6 +113,7 @@ export default function MeseroHome({ navigation }: Props) {
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
+
     try {
       const peds = await api.getPedidos();
       setPedidos(peds);
@@ -105,15 +122,19 @@ export default function MeseroHome({ navigation }: Props) {
     }
   }, []);
 
-  // ── Cart ──────────────────────────────────────────────────────────────────
   const addToCart = (id: number) =>
-    setCart((prev) => ({ ...prev, [id]: (prev[id] ?? 0) + 1 }));
+    setCart((prev) => ({
+      ...prev,
+      [id]: (prev[id] ?? 0) + 1,
+    }));
 
   const removeFromCart = (id: number) =>
     setCart((prev) => {
       const next = { ...prev };
+
       if ((next[id] ?? 0) <= 1) delete next[id];
       else next[id]--;
+
       return next;
     });
 
@@ -122,45 +143,48 @@ export default function MeseroHome({ navigation }: Props) {
   const cartTotal = () =>
     Object.entries(cart).reduce((sum, [id, qty]) => {
       const p = productos.find((x) => x.id === Number(id));
+
       return sum + (p ? parseFloat(p.precio) * qty : 0);
     }, 0);
 
-  // El total del pedido se calcula localmente usando precio actual del catálogo
   const pedidoTotal = (pedido: Pedido) =>
     pedido.detalles.reduce((sum, d) => {
       const precio = d.precio_unitario ? parseFloat(d.precio_unitario) : 0;
+
       return sum + precio * d.cantidad;
     }, 0);
 
-  // ── Enviar pedido ─────────────────────────────────────────────────────────
   const enviarPedido = async () => {
     if (!mesaSeleccionada) {
-      Alert.alert("Mesa requerida", "Selecciona una mesa primero");
+      Alert.alert("Mesa requerida", "Selecciona una mesa");
       return;
     }
+
     if (cartCount() === 0) {
-      Alert.alert("Carrito vacío", "Agrega al menos una bebida");
+      Alert.alert("Carrito vacío", "Agrega bebidas");
       return;
     }
+
     setSending(true);
+
     try {
-      // Body exacto: { mesa: id, detalles: [{ producto: id, cantidad: n }] }
-      // NO enviar precio_unitario → el backend lo toma del catálogo (read_only)
       const detalles = Object.entries(cart).map(([producto, cantidad]) => ({
         producto: Number(producto),
         cantidad,
       }));
+
       await api.crearPedido(mesaSeleccionada, detalles);
+
       setCart({});
       setMesaSeleccionada(null);
+
       Alert.alert("✅ Pedido enviado", "El bartender ya lo recibió");
+
       const peds = await api.getPedidos();
       setPedidos(peds);
     } catch (e: any) {
-      const msg =
-        e?.data?.non_field_errors?.[0] ??
-        e?.data?.detail ??
-        "No se pudo enviar el pedido";
+      const msg = e?.data?.detail ?? "No se pudo enviar el pedido";
+
       Alert.alert("Error", msg);
     } finally {
       setSending(false);
@@ -169,20 +193,16 @@ export default function MeseroHome({ navigation }: Props) {
 
   if (loadingData) {
     return (
-      <View
-        style={[
-          styles.container,
-          { justifyContent: "center", alignItems: "center" },
-        ]}
-      >
+      <View style={styles.loader}>
         <ActivityIndicator color={colors.mesero} size="large" />
       </View>
     );
   }
 
-  // Separar pedidos activos (pending/preparing) de entregados
   const pedidosActivos = pedidos.filter((p) => p.estado !== "delivered");
+
   const pedidosEntregados = pedidos.filter((p) => p.estado === "delivered");
+
   const productosPorCategoria = productos.reduce(
     (acc, producto) => {
       const categoria = producto.categoria_nombre || "Sin categoría";
@@ -197,18 +217,21 @@ export default function MeseroHome({ navigation }: Props) {
     },
     {} as Record<string, Producto[]>,
   );
+
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor={colors.bg} />
 
-      {/* Top bar */}
+      {/* TOPBAR */}
       <View style={styles.topBar}>
         <View>
-          <Text style={styles.topBarRole}>🧑‍🍳 MESERO</Text>
+          <Text style={styles.topBarRole}>🧑‍🍳 MESERO PANEL</Text>
+
           <Text style={styles.topBarUser}>
             {(user?.nombre ?? user?.username ?? "").toUpperCase()}
           </Text>
         </View>
+
         <TouchableOpacity
           onPress={async () => {
             await signOut();
@@ -220,208 +243,164 @@ export default function MeseroHome({ navigation }: Props) {
         </TouchableOpacity>
       </View>
 
-      {/* Tabs */}
-      <View style={styles.tabs}>
-        {(
-          [
-            { key: "order", label: "+ PEDIDO", icon: "📋" },
-            { key: "history", label: "HISTORIAL", icon: "🕐" },
-          ] as const
-        ).map((t) => (
-          <TouchableOpacity
-            key={t.key}
-            style={[styles.tab, tab === t.key && styles.tabActive]}
-            onPress={() => setTab(t.key)}
-          >
-            <Text
-              style={[styles.tabText, tab === t.key && styles.tabTextActive]}
+      {/* TABS */}
+      <View style={styles.tabsWrapper}>
+        <View style={styles.tabs}>
+          {(
+            [
+              {
+                key: "order",
+                label: "+ PEDIDO",
+                icon: "📋",
+              },
+              {
+                key: "history",
+                label: "HISTORIAL",
+                icon: "🕐",
+              },
+            ] as const
+          ).map((t) => (
+            <TouchableOpacity
+              key={t.key}
+              style={[styles.tab, tab === t.key && styles.tabActive]}
+              onPress={() => setTab(t.key)}
             >
-              {t.icon} {t.label}
-            </Text>
-          </TouchableOpacity>
-        ))}
+              <Text
+                style={[styles.tabText, tab === t.key && styles.tabTextActive]}
+              >
+                {t.icon} {t.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
       </View>
 
-      {/* ── ORDER TAB ── */}
+      {/* ORDER */}
       {tab === "order" ? (
         <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
-          <Text style={styles.sectionLabel}>MESA</Text>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={styles.tableRow}
-          >
-            {mesas.map((m) => (
-              <TouchableOpacity
-                key={m.id}
-                style={[
-                  styles.tableBtn,
-                  mesaSeleccionada === m.id && styles.tableBtnActive,
-                ]}
-                onPress={() => setMesaSeleccionada(m.id)}
-              >
-                <Text
+          <View style={[styles.contentContainer, { maxWidth: CONTENT_WIDTH }]}>
+            {/* MESAS */}
+            <Text style={styles.sectionLabel}>MESAS</Text>
+
+            <View style={styles.tablesGrid}>
+              {mesas.map((m) => (
+                <TouchableOpacity
+                  key={m.id}
                   style={[
-                    styles.tableNum,
-                    mesaSeleccionada === m.id && styles.tableNumActive,
+                    styles.tableBtn,
+                    mesaSeleccionada === m.id && styles.tableBtnActive,
                   ]}
+                  onPress={() => setMesaSeleccionada(m.id)}
                 >
-                  {m.numero}
+                  <Text
+                    style={[
+                      styles.tableNum,
+                      mesaSeleccionada === m.id && styles.tableNumActive,
+                    ]}
+                  >
+                    {m.numero}
+                  </Text>
+
+                  <View
+                    style={[
+                      styles.tableDot,
+                      {
+                        backgroundColor:
+                          m.estado === "occupied"
+                            ? colors.danger
+                            : colors.delivered,
+                      },
+                    ]}
+                  />
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {/* PRODUCTOS */}
+            <Text style={styles.sectionLabel}>BEBIDAS</Text>
+
+            {Object.entries(productosPorCategoria).map(([categoria, items]) => (
+              <View key={categoria} style={{ marginBottom: spacing.xl }}>
+                <Text style={styles.categoryTitle}>
+                  {CATEGORY_ICONS[categoria]} {categoria.toUpperCase()}
                 </Text>
-                {/* Indicador de ocupación */}
-                <View
-                  style={[
-                    styles.tableDot,
-                    {
-                      backgroundColor:
-                        m.estado === "occupied"
-                          ? colors.danger
-                          : colors.delivered,
-                    },
-                  ]}
-                />
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
 
-          <Text style={styles.sectionLabel}>BEBIDAS</Text>
-          {Object.entries(productosPorCategoria).map(([categoria, items]) => (
-            <View key={categoria} style={{ marginBottom: spacing.lg }}>
-              {/* Título categoría */}
-              <Text style={styles.categoryTitle}>
-                {CATEGORY_ICONS[categoria]} {categoria.toUpperCase()}
-              </Text>
+                <View style={styles.productsGrid}>
+                  {items.map((p) => {
+                    const qty = cart[p.id] ?? 0;
 
-              <View style={styles.productsGrid}>
-                {items.map((p) => {
-                  const qty = cart[p.id] ?? 0;
-
-                  return (
-                    <TouchableOpacity
-                      key={p.id}
-                      style={[
-                        styles.productCard,
-                        qty > 0 && styles.productCardSelected,
-                      ]}
-                      onPress={() => {
-                        setProductoSeleccionado(p);
-                        setModalVisible(true);
-                      }}
-                    >
-                      {/* Imagen */}
-                      {p.imagen ? (
-                        <Image
-                          source={{ uri: p.imagen }}
-                          style={styles.productImage}
-                          resizeMode="cover"
-                        />
-                      ) : (
-                        <View style={styles.placeholderMini}>
-                          <Text style={{ color: "white", fontSize: 10 }}>
-                            SIN IMAGEN
-                          </Text>
-                        </View>
-                      )}
-
-                      {/* Nombre */}
-                      <Text style={styles.productName}>{p.nombre}</Text>
-
-                      {/* Precio */}
-                      <Text style={styles.productPrice}>
-                        ${parseFloat(p.precio).toFixed(2)}
-                      </Text>
-
-                      {/* Botones */}
-                      <View style={styles.qtyRow}>
-                        {qty > 0 && (
-                          <TouchableOpacity
-                            style={styles.qtyBtn}
-                            onPress={() => removeFromCart(p.id)}
-                          >
-                            <Text style={styles.qtyBtnText}>−</Text>
-                          </TouchableOpacity>
+                    return (
+                      <TouchableOpacity
+                        key={p.id}
+                        style={[
+                          styles.productCard,
+                          {
+                            width: CARD_WIDTH,
+                          },
+                          qty > 0 && styles.productCardSelected,
+                        ]}
+                        activeOpacity={0.9}
+                        onPress={() => {
+                          setProductoSeleccionado(p);
+                          setModalVisible(true);
+                        }}
+                      >
+                        {p.imagen ? (
+                          <Image
+                            source={{ uri: p.imagen }}
+                            style={styles.productImage}
+                            resizeMode="cover"
+                          />
+                        ) : (
+                          <View style={styles.placeholderMini}>
+                            <Text
+                              style={{
+                                color: "white",
+                              }}
+                            >
+                              SIN IMAGEN
+                            </Text>
+                          </View>
                         )}
 
-                        {qty > 0 && <Text style={styles.qtyNum}>{qty}</Text>}
+                        <Text style={styles.productName} numberOfLines={2}>
+                          {p.nombre}
+                        </Text>
 
-                        <TouchableOpacity
-                          style={[styles.qtyBtn, styles.qtyBtnAdd]}
-                          onPress={() => addToCart(p.id)}
-                        >
-                          <Text style={styles.qtyBtnText}>+</Text>
-                        </TouchableOpacity>
-                      </View>
-                    </TouchableOpacity>
-                  );
-                })}
+                        <Text style={styles.productPrice}>
+                          ${parseFloat(p.precio).toLocaleString()}
+                        </Text>
+
+                        <View style={styles.qtyRow}>
+                          {qty > 0 && (
+                            <TouchableOpacity
+                              style={styles.qtyBtn}
+                              onPress={() => removeFromCart(p.id)}
+                            >
+                              <Text style={styles.qtyBtnText}>−</Text>
+                            </TouchableOpacity>
+                          )}
+
+                          {qty > 0 && <Text style={styles.qtyNum}>{qty}</Text>}
+
+                          <TouchableOpacity
+                            style={[styles.qtyBtn, styles.qtyBtnAdd]}
+                            onPress={() => addToCart(p.id)}
+                          >
+                            <Text style={styles.qtyBtnText}>+</Text>
+                          </TouchableOpacity>
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
               </View>
-            </View>
-          ))}
-          <View style={{ height: 160 }} />
-          <Modal
-            visible={modalVisible}
-            transparent
-            animationType="slide"
-            onRequestClose={() => setModalVisible(false)}
-          >
-            <View style={styles.modalOverlay}>
-              <View style={styles.modalContent}>
-                {/* Imagen */}
-                {productoSeleccionado?.imagen ? (
-                  <Image
-                    source={{ uri: productoSeleccionado.imagen }}
-                    style={styles.modalImage}
-                    resizeMode="cover"
-                  />
-                ) : (
-                  <View style={styles.placeholderImage}>
-                    <Text style={{ color: "white" }}>SIN IMAGEN</Text>
-                  </View>
-                )}
+            ))}
 
-                {/* Nombre */}
-                <Text style={styles.modalTitle}>
-                  {productoSeleccionado?.nombre}
-                </Text>
-
-                {/* Categoría */}
-                <Text style={styles.modalCategory}>
-                  {productoSeleccionado?.categoria_nombre}
-                </Text>
-
-                {/* Descripción */}
-                <Text style={styles.modalDescription}>
-                  {productoSeleccionado?.descripcion}
-                </Text>
-
-                {/* Precio */}
-                <Text style={styles.modalPrice}>
-                  ${productoSeleccionado?.precio}
-                </Text>
-
-                {/* Botón agregar */}
-                <TouchableOpacity
-                  style={styles.modalButton}
-                  onPress={() => {
-                    if (productoSeleccionado) {
-                      addToCart(productoSeleccionado.id);
-                    }
-                    setModalVisible(false);
-                  }}
-                >
-                  <Text style={styles.modalButtonText}>AGREGAR AL PEDIDO</Text>
-                </TouchableOpacity>
-
-                {/* Cerrar */}
-                <TouchableOpacity onPress={() => setModalVisible(false)}>
-                  <Text style={styles.closeText}>Cerrar</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </Modal>
+            <View style={{ height: 160 }} />
+          </View>
         </ScrollView>
       ) : (
-        /* ── HISTORY TAB ── */
         <ScrollView
           style={styles.scroll}
           refreshControl={
@@ -431,47 +410,62 @@ export default function MeseroHome({ navigation }: Props) {
               tintColor={colors.mesero}
             />
           }
-          showsVerticalScrollIndicator={false}
         >
-          {pedidosActivos.length > 0 && (
-            <>
-              <Text style={styles.sectionLabel}>ACTIVOS</Text>
-              {pedidosActivos.map((pedido) => {
-                const s = STATUS_CONFIG[pedido.estado];
-                return (
-                  <View key={pedido.id} style={styles.orderCard}>
-                    <View style={globalStyles.spaceBetween}>
-                      <Text style={styles.orderTable}>
-                        MESA {pedido.numero_mesa ?? pedido.mesa}
-                      </Text>
-                      <View
-                        style={[styles.statusBadge, { backgroundColor: s.bg }]}
-                      >
-                        <Text style={[styles.statusText, { color: s.color }]}>
-                          {s.label}
-                        </Text>
-                      </View>
-                    </View>
-                    {pedido.detalles.map((d, i) => (
-                      <Text key={i} style={styles.orderItem}>
-                        {d.cantidad}×{" "}
-                        {d.nombre_producto ?? `Producto ${d.producto}`}
-                      </Text>
-                    ))}
-                    <Text style={styles.orderTotal}>
-                      TOTAL ${pedidoTotal(pedido).toFixed(2)}
-                    </Text>
-                  </View>
-                );
-              })}
-            </>
-          )}
+          <View style={[styles.contentContainer, { maxWidth: 1100 }]}>
+            {pedidosActivos.length > 0 && (
+              <>
+                <Text style={styles.sectionLabel}>ACTIVOS</Text>
 
-          <Text style={styles.sectionLabel}>ENTREGADOS HOY</Text>
-          {pedidosEntregados.length === 0 ? (
-            <Text style={styles.emptyText}>Sin pedidos entregados hoy</Text>
-          ) : (
-            pedidosEntregados.map((pedido) => (
+                {pedidosActivos.map((pedido) => {
+                  const s = STATUS_CONFIG[pedido.estado];
+
+                  return (
+                    <View key={pedido.id} style={styles.orderCard}>
+                      <View style={globalStyles.spaceBetween}>
+                        <Text style={styles.orderTable}>
+                          MESA {pedido.numero_mesa ?? pedido.mesa}
+                        </Text>
+
+                        <View
+                          style={[
+                            styles.statusBadge,
+                            {
+                              backgroundColor: s.bg,
+                            },
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.statusText,
+                              {
+                                color: s.color,
+                              },
+                            ]}
+                          >
+                            {s.label}
+                          </Text>
+                        </View>
+                      </View>
+
+                      {pedido.detalles.map((d, i) => (
+                        <Text key={i} style={styles.orderItem}>
+                          {d.cantidad}×{" "}
+                          {d.nombre_producto ?? `Producto ${d.producto}`}
+                        </Text>
+                      ))}
+
+                      <Text style={styles.orderTotal}>
+                        TOTAL ${pedidoTotal(pedido).toLocaleString()}
+                      </Text>
+                    </View>
+                  );
+                })}
+              </>
+            )}
+
+            <Text style={styles.sectionLabel}>ENTREGADOS</Text>
+
+            {pedidosEntregados.map((pedido) => (
               <View
                 key={pedido.id}
                 style={[styles.orderCard, { opacity: 0.7 }]}
@@ -480,42 +474,55 @@ export default function MeseroHome({ navigation }: Props) {
                   <Text style={styles.orderTable}>
                     MESA {pedido.numero_mesa ?? pedido.mesa}
                   </Text>
+
                   <View
                     style={[
                       styles.statusBadge,
-                      { backgroundColor: colors.delivered + "20" },
+                      {
+                        backgroundColor: colors.delivered + "20",
+                      },
                     ]}
                   >
                     <Text
-                      style={[styles.statusText, { color: colors.delivered }]}
+                      style={[
+                        styles.statusText,
+                        {
+                          color: colors.delivered,
+                        },
+                      ]}
                     >
                       ✓ ENTREGADO
                     </Text>
                   </View>
                 </View>
+
                 {pedido.detalles.map((d, i) => (
                   <Text key={i} style={styles.orderItem}>
                     {d.cantidad}×{" "}
                     {d.nombre_producto ?? `Producto ${d.producto}`}
                   </Text>
                 ))}
+
                 <Text style={styles.orderTotal}>
-                  TOTAL ${pedidoTotal(pedido).toFixed(2)}
+                  TOTAL ${pedidoTotal(pedido).toLocaleString()}
                 </Text>
               </View>
-            ))
-          )}
-          <View style={{ height: 40 }} />
+            ))}
+          </View>
         </ScrollView>
       )}
 
-      {/* Footer envío */}
+      {/* FOOTER */}
       {tab === "order" && (
-        <View style={styles.footer}>
+        <View style={[styles.footer, isDesktop && styles.footerDesktop]}>
           <View style={styles.footerInfo}>
             <Text style={styles.footerCount}>{cartCount()} items</Text>
-            <Text style={styles.footerTotal}>${cartTotal().toFixed(2)}</Text>
+
+            <Text style={styles.footerTotal}>
+              ${cartTotal().toLocaleString()}
+            </Text>
           </View>
+
           <TouchableOpacity
             style={[styles.sendBtn, sending && { opacity: 0.5 }]}
             onPress={enviarPedido}
@@ -529,254 +536,432 @@ export default function MeseroHome({ navigation }: Props) {
           </TouchableOpacity>
         </View>
       )}
+
+      {/* MODAL */}
+      <Modal
+        visible={modalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View
+            style={[
+              styles.modalContent,
+              isDesktop && {
+                width: 550,
+              },
+            ]}
+          >
+            {productoSeleccionado?.imagen ? (
+              <Image
+                source={{
+                  uri: productoSeleccionado.imagen,
+                }}
+                style={styles.modalImage}
+                resizeMode="cover"
+              />
+            ) : (
+              <View style={styles.placeholderImage}>
+                <Text style={{ color: "white" }}>SIN IMAGEN</Text>
+              </View>
+            )}
+
+            <Text style={styles.modalTitle}>
+              {productoSeleccionado?.nombre}
+            </Text>
+
+            <Text style={styles.modalCategory}>
+              {productoSeleccionado?.categoria_nombre}
+            </Text>
+
+            <Text style={styles.modalDescription}>
+              {productoSeleccionado?.descripcion}
+            </Text>
+
+            <Text style={styles.modalPrice}>
+              ${productoSeleccionado?.precio}
+            </Text>
+
+            <TouchableOpacity
+              style={styles.modalButton}
+              onPress={() => {
+                if (productoSeleccionado) {
+                  addToCart(productoSeleccionado.id);
+                }
+
+                setModalVisible(false);
+              }}
+            >
+              <Text style={styles.modalButtonText}>AGREGAR AL PEDIDO</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity onPress={() => setModalVisible(false)}>
+              <Text style={styles.closeText}>Cerrar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.bg },
-  scroll: { flex: 1, paddingHorizontal: spacing.lg },
+  container: {
+    flex: 1,
+    backgroundColor: colors.bg,
+  },
+
+  loader: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: colors.bg,
+  },
+
+  scroll: {
+    flex: 1,
+  },
+
+  contentContainer: {
+    width: "100%",
+    alignSelf: "center",
+    paddingHorizontal: spacing.lg,
+  },
+
   topBar: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     paddingHorizontal: spacing.lg,
-    paddingTop: 54,
+    paddingTop: Platform.OS === "web" ? 30 : 54,
     paddingBottom: spacing.md,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
+
   topBarRole: {
     color: colors.mesero,
     fontSize: 12,
     ...typography.caption,
     letterSpacing: 2,
   },
+
   topBarUser: {
     color: colors.textPrimary,
     fontSize: 18,
     ...typography.heading,
     marginTop: 2,
   },
+
   logoutBtn: {
     paddingHorizontal: spacing.md,
-    paddingVertical: 4,
+    paddingVertical: 6,
     borderRadius: radius.full,
     borderWidth: 1,
     borderColor: colors.border,
   },
+
   logoutText: {
     color: colors.textMuted,
-    fontSize: 10,
-    ...typography.caption,
-    letterSpacing: 1,
+    fontSize: 11,
   },
+
+  tabsWrapper: {
+    paddingHorizontal: spacing.lg,
+    marginTop: spacing.md,
+  },
+
   tabs: {
     flexDirection: "row",
-    padding: spacing.sm,
     backgroundColor: colors.surface,
-    marginHorizontal: spacing.lg,
-    marginVertical: spacing.md,
     borderRadius: radius.lg,
-    gap: spacing.xs,
+    padding: spacing.xs,
+    alignSelf: "center",
+    width: "100%",
+    maxWidth: 1500,
   },
+
   tab: {
     flex: 1,
-    paddingVertical: spacing.sm,
+    paddingVertical: 14,
     borderRadius: radius.md,
     alignItems: "center",
   },
-  tabActive: { backgroundColor: colors.mesero },
+
+  tabActive: {
+    backgroundColor: colors.mesero,
+  },
+
   tabText: {
     color: colors.textMuted,
     fontSize: 12,
-    ...typography.caption,
+    fontWeight: "600",
     letterSpacing: 1,
   },
-  tabTextActive: { color: colors.black, fontWeight: "800" },
+
+  tabTextActive: {
+    color: colors.black,
+  },
+
   sectionLabel: {
     color: colors.textMuted,
     fontSize: 11,
-    ...typography.caption,
     letterSpacing: 3,
-    marginTop: spacing.md,
-    marginBottom: spacing.sm,
+    marginTop: spacing.xl,
+    marginBottom: spacing.md,
   },
-  tableRow: { marginBottom: spacing.sm },
+
+  tablesGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm,
+  },
+
   tableBtn: {
-    width: 52,
-    height: 52,
-    borderRadius: 12,
+    width: 60,
+    height: 60,
+    borderRadius: 16,
     backgroundColor: colors.card,
     borderWidth: 1,
     borderColor: colors.border,
     alignItems: "center",
     justifyContent: "center",
-    marginRight: spacing.sm,
   },
+
   tableBtnActive: {
     backgroundColor: colors.mesero,
     borderColor: colors.mesero,
   },
+
   tableNum: {
-    color: colors.textSecondary,
-    fontSize: 16,
-    ...typography.subheading,
+    color: colors.textPrimary,
+    fontSize: 18,
+    fontWeight: "700",
   },
-  tableNumActive: { color: colors.black },
+
+  tableNumActive: {
+    color: colors.black,
+  },
+
   tableDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
+    width: 8,
+    height: 8,
+    borderRadius: 10,
     position: "absolute",
-    top: 6,
-    right: 6,
+    top: 8,
+    right: 8,
   },
-  productsGrid: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
+
+  categoryTitle: {
+    color: colors.mesero,
+    fontSize: 22,
+    marginBottom: spacing.md,
+    fontWeight: "800",
+  },
+
+  productsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+  },
+
   productCard: {
-    width: "47%",
     backgroundColor: colors.card,
-    borderRadius: radius.lg,
+    borderRadius: radius.xl,
     padding: spacing.md,
     borderWidth: 1,
     borderColor: colors.border,
+    marginBottom: spacing.md,
   },
+
   productCardSelected: {
     borderColor: colors.mesero,
     backgroundColor: colors.meseroGlow,
   },
+
+  productImage: {
+    width: "100%",
+    height: 180,
+    borderRadius: 16,
+    marginBottom: spacing.md,
+  },
+
+  placeholderMini: {
+    width: "100%",
+    height: 180,
+    borderRadius: 16,
+    backgroundColor: colors.border,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: spacing.md,
+  },
+
   productName: {
     color: colors.textPrimary,
-    fontSize: 14,
-    ...typography.subheading,
-    marginBottom: 2,
+    fontSize: 16,
+    fontWeight: "700",
   },
+
   productPrice: {
     color: colors.mesero,
-    fontSize: 18,
-    ...typography.heading,
-    marginBottom: spacing.sm,
+    fontSize: 22,
+    fontWeight: "800",
+    marginTop: 6,
+    marginBottom: spacing.md,
   },
+
   qtyRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.sm,
-    marginTop: 4,
   },
+
   qtyBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
+    width: 38,
+    height: 38,
+    borderRadius: 12,
     backgroundColor: colors.border,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  qtyBtnAdd: { backgroundColor: colors.mesero },
-  qtyBtnText: {
-    color: colors.textPrimary,
-    fontSize: 18,
-    fontWeight: "700",
-    lineHeight: 22,
-  },
-  qtyNum: {
-    color: colors.textPrimary,
-    fontSize: 16,
-    ...typography.subheading,
-    minWidth: 20,
-    textAlign: "center",
-  },
-  orderCard: {
-    backgroundColor: colors.card,
-    borderRadius: radius.lg,
-    padding: spacing.md,
-    marginBottom: spacing.sm,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  orderTable: {
-    color: colors.textPrimary,
-    fontSize: 16,
-    ...typography.heading,
-  },
-  orderItem: { color: colors.textSecondary, fontSize: 13, marginTop: 4 },
-  orderTotal: {
-    color: colors.mesero,
-    fontSize: 14,
-    ...typography.subheading,
-    marginTop: spacing.sm,
-  },
-  statusBadge: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 3,
-    borderRadius: radius.full,
-  },
-  statusText: { fontSize: 10, ...typography.caption, letterSpacing: 1 },
-  emptyText: {
-    color: colors.textMuted,
-    textAlign: "center",
-    marginTop: spacing.xl,
-    ...typography.body,
-  },
-  footer: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: colors.surface,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
-    paddingBottom: 36,
-    gap: spacing.md,
-  },
-  footerInfo: { flex: 1 },
-  footerCount: { color: colors.textMuted, fontSize: 12, ...typography.caption },
-  footerTotal: {
-    color: colors.textPrimary,
-    fontSize: 20,
-    ...typography.heading,
-  },
-  sendBtn: {
-    flex: 2,
-    backgroundColor: colors.mesero,
-    borderRadius: radius.lg,
-    paddingVertical: spacing.md,
-    alignItems: "center",
-  },
-  sendBtnText: {
-    color: colors.black,
-    fontSize: 14,
-    ...typography.heading,
-    letterSpacing: 1,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.7)",
     justifyContent: "center",
     alignItems: "center",
   },
 
-  modalContent: {
-    width: "85%",
-    backgroundColor: colors.card,
+  qtyBtnAdd: {
+    backgroundColor: colors.mesero,
+  },
+
+  qtyBtnText: {
+    color: colors.textPrimary,
+    fontSize: 20,
+    fontWeight: "800",
+  },
+
+  qtyNum: {
+    color: colors.textPrimary,
+    fontSize: 16,
+    fontWeight: "700",
+  },
+
+  footer: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: colors.surface,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    padding: spacing.lg,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+  },
+
+  footerDesktop: {
+    alignSelf: "center",
+    maxWidth: 1500,
     borderRadius: 20,
+    marginBottom: 10,
+    left: 20,
+    right: 20,
+  },
+
+  footerInfo: {
+    flex: 1,
+  },
+
+  footerCount: {
+    color: colors.textMuted,
+    fontSize: 12,
+  },
+
+  footerTotal: {
+    color: colors.textPrimary,
+    fontSize: 24,
+    fontWeight: "800",
+  },
+
+  sendBtn: {
+    flex: 2,
+    backgroundColor: colors.mesero,
+    borderRadius: radius.lg,
+    paddingVertical: 18,
+    alignItems: "center",
+  },
+
+  sendBtnText: {
+    color: colors.black,
+    fontSize: 15,
+    fontWeight: "800",
+    letterSpacing: 1,
+  },
+
+  orderCard: {
+    backgroundColor: colors.card,
+    borderRadius: radius.lg,
+    padding: spacing.lg,
+    marginBottom: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+
+  orderTable: {
+    color: colors.textPrimary,
+    fontSize: 18,
+    fontWeight: "800",
+  },
+
+  orderItem: {
+    color: colors.textSecondary,
+    fontSize: 14,
+    marginTop: 6,
+  },
+
+  orderTotal: {
+    color: colors.mesero,
+    fontSize: 16,
+    marginTop: spacing.md,
+    fontWeight: "800",
+  },
+
+  statusBadge: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 6,
+    borderRadius: radius.full,
+  },
+
+  statusText: {
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 1,
+  },
+
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.75)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: spacing.lg,
+  },
+
+  modalContent: {
+    width: "100%",
+    maxWidth: 500,
+    backgroundColor: colors.card,
+    borderRadius: 24,
     padding: spacing.lg,
   },
 
   modalImage: {
     width: "100%",
-    height: 200,
-    borderRadius: 16,
+    height: 280,
+    borderRadius: 18,
     marginBottom: spacing.md,
   },
 
   placeholderImage: {
     width: "100%",
-    height: 200,
-    borderRadius: 16,
+    height: 280,
+    borderRadius: 18,
     backgroundColor: colors.border,
     justifyContent: "center",
     alignItems: "center",
@@ -785,26 +970,29 @@ const styles = StyleSheet.create({
 
   modalTitle: {
     color: colors.textPrimary,
-    fontSize: 24,
-    ...typography.heading,
+    fontSize: 28,
+    fontWeight: "800",
   },
 
   modalCategory: {
     color: colors.mesero,
-    marginTop: 4,
-    marginBottom: spacing.sm,
+    marginTop: 6,
+    fontSize: 14,
+    fontWeight: "700",
   },
 
   modalDescription: {
     color: colors.textSecondary,
-    lineHeight: 22,
+    marginTop: spacing.md,
+    lineHeight: 24,
+    fontSize: 15,
   },
 
   modalPrice: {
     color: colors.delivered,
-    fontSize: 22,
-    marginTop: spacing.md,
-    ...typography.heading,
+    fontSize: 28,
+    marginTop: spacing.lg,
+    fontWeight: "800",
   },
 
   modalButton: {
@@ -812,41 +1000,18 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     borderRadius: radius.lg,
     alignItems: "center",
-    marginTop: spacing.lg,
+    marginTop: spacing.xl,
   },
 
   modalButtonText: {
     color: colors.black,
-    fontWeight: "bold",
+    fontWeight: "800",
+    letterSpacing: 1,
   },
 
   closeText: {
     color: colors.textMuted,
     textAlign: "center",
     marginTop: spacing.md,
-  },
-  categoryTitle: {
-    color: colors.mesero,
-    fontSize: 20,
-    marginBottom: spacing.sm,
-    marginTop: spacing.md,
-    ...typography.heading,
-  },
-
-  productImage: {
-    width: "100%",
-    height: 100,
-    borderRadius: 12,
-    marginBottom: spacing.sm,
-  },
-
-  placeholderMini: {
-    width: "100%",
-    height: 100,
-    borderRadius: 12,
-    backgroundColor: colors.border,
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: spacing.sm,
   },
 });
