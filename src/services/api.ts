@@ -162,6 +162,17 @@ export const getUsuarios = (): Promise<User[]> =>
 export const getRoles = (): Promise<Rol[]> =>
   request<Rol[]>('GET', '/api/users/roles/');
 
+export interface UsuarioPublico {
+  id: number;
+  email: string;
+  nombre: string | null;
+  username: string;
+}
+
+/** GET /api/users/usuarios/por_rol/?rol=<rol> — lista usuarios activos por rol (AllowAny) */
+export const getUsuariosPorRol = (rol: string): Promise<UsuarioPublico[]> =>
+  request<UsuarioPublico[]>('GET', `/api/users/usuarios/por_rol/?rol=${encodeURIComponent(rol)}`);
+
 // ─── PRODUCTOS ──────────────────────────────────────────────────────────────
 
 /**

@@ -5,9 +5,9 @@ import {
 import { colors, spacing, radius, typography } from '../theme';
 
 export interface QuickUser {
-  name: string;    // nombre visible en pantalla
-  email: string;   // ⚠️ el backend usa EMAIL como campo de login (USERNAME_FIELD = 'email')
-  password: string;
+  name: string;
+  email: string;
+  password?: string;
   color: string;
 }
 
