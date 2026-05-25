@@ -345,9 +345,9 @@ export default function MeseroHome({ navigation }: Props) {
                           setModalVisible(true);
                         }}
                       >
-                        {p.imagen ? (
+                        {p.imagen_url ? (
                           <Image
-                            source={{ uri: p.imagen }}
+                            source={{ uri: p.imagen_url }}
                             style={styles.productImage}
                             resizeMode="cover"
                           />
@@ -553,10 +553,10 @@ export default function MeseroHome({ navigation }: Props) {
               },
             ]}
           >
-            {productoSeleccionado?.imagen ? (
+            {productoSeleccionado?.imagen_url ? (
               <Image
                 source={{
-                  uri: productoSeleccionado.imagen,
+                  uri: productoSeleccionado.imagen_url,
                 }}
                 style={styles.modalImage}
                 resizeMode="cover"

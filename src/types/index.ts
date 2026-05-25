@@ -30,7 +30,7 @@ export interface Rol {
 
 // ── Producto ──────────────────────────────────────────────────────────────────
 // ProductoSerializer: id, nombre, descripcion, precio, stock, disponible,
-//                     categoria, categoria_nombre, imagen, creado_en
+//                     categoria, categoria_nombre, imagen, imagen_url, creado_en
 export interface Producto {
   id: number;
   nombre: string;
@@ -40,7 +40,8 @@ export interface Producto {
   disponible: boolean;
   categoria: number;         // FK id
   categoria_nombre?: string; // read_only
-  imagen: string | null;
+  imagen: string | null;     // ruta raw del campo (puede ser relativa en dev)
+  imagen_url: string | null; // URL absoluta resuelta (Cloudinary o local) — usar esta
   creado_en?: string;
 }
 
